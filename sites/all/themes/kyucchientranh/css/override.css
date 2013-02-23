@@ -1,0 +1,17 @@
+/* 
+    Document   : override
+    Created on : Feb 23, 2013, 10:41:21 AM
+    Author     : wwwistoremacbookcom
+    Description:
+        Purpose of the stylesheet follows.
+*/
+.content .mainbar .view-content a {
+    text-decoration: none;
+    margin:8px 0;
+    padding:8px 0;
+    font-size:25px;
+    font-weight:normal;
+    color:#3f3f3f;
+    border-bottom: 1px solid #bebebe
+
+}

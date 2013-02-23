@@ -1,0 +1,15 @@
+name = "Simplenews Statistics"
+description = "Gathers newsletter statistics"
+files[] = tests/simplenews_statistics.test
+dependencies[] = simplenews
+dependencies[] = views
+configure = admin/config/services/simplenews/statistics
+package = Mail
+core = 7.x
+
+; Information added by drupal.org packaging script on 2012-09-15
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "simplenews_statistics"
+datestamp = "1347671231"
+

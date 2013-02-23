@@ -1,0 +1,35 @@
+
+name = Ky Yc Chien Tranh
+description = A flexible, recolorable theme with many regions.
+package = Core
+version = VERSION
+core = 7.x
+
+
+stylesheets[all][] = css/style.css
+stylesheets[all][] = css/coin-slider.css
+stylesheets[all][] = css/override.css
+
+scripts[] = js/cufon-yui.js
+scripts[] = js/js/cufon-times.js
+scripts[] = js/jquery-1.4.2.min.js
+scripts[] = js/script.js
+scripts[] = js/coin-slider.min.js
+
+regions[header] = Header
+regions[highlighted] = Highlighted
+regions[fbg] = Page bottom
+
+regions[highlighted] = Highlighted
+regions[content] = Content
+regions[footer] = Footer
+regions[sidebar_left] = Sidebar second
+
+settings[shortcut_module_link] = 0
+
+
+; Information added by drupal.org packaging script on 2013-01-16
+version = "7.19"
+project = "drupal"
+datestamp = "1358374870"
+
