@@ -1,0 +1,134 @@
+<?php
+/**
+ * @file
+ * Install file with schema hooks.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function simple_field_schema() {
+  $tables = array();
+
+  $tables['simple_field'] = array(
+    'description' => 'SimpleField objects',
+    'fields' => array(
+      'id' => array(
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'type' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ),
+      'field_id' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+      'field_name' => array(
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+      ),
+      'status' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0x01, // ENTITY_CUSTOM
+        'size' => 'tiny',
+      ),
+      'module' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => FALSE,
+      ),
+      'uid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'The user id of the creator of the field',
+      ),
+      'field_settings' => array(
+        'type' => 'text',
+        'size' => 'medium',
+        'serialize' => TRUE,
+      ),
+      'instance_settings' => array(
+        'type' => 'text',
+        'size' => 'medium',
+        'serialize' => TRUE,
+      ),
+      'widget_settings' => array(
+        'type' => 'text',
+        'size' => 'medium',
+        'serialize' => TRUE,
+      ),
+      'formatter_settings' => array(
+        'type' => 'text',
+        'size' => 'medium',
+        'serialize' => TRUE,
+      ),
+      'required' => array(
+        'type' => 'int',
+        'size' => 'tiny',
+      ),
+    ),
+    'primary key' => array('id'),
+    'indexes' => array(
+      'field_id' => array('field_id'),
+      'type' => array('type'),
+    ),
+  );
+
+  return $tables;
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function simple_field_uninstall() {
+  db_delete('variable')
+    ->condition(db_and()
+      ->condition('name', 'simple_field_%', 'LIKE')
+      ->condition('name', 'simple_field_formatter_%', 'NOT LIKE')
+    )
+    ->execute();
+}
+
+/**
+ * Add new columns for exportability settings.
+ */
+function simple_field_update_7000() {
+  db_add_field('simple_field', 'field_name', array(
+    'type' => 'varchar',
+    'length' => 32,
+    'not null' => TRUE,
+    'default' => '',
+  ));
+  db_add_field('simple_field', 'status', array(
+    'type' => 'int',
+    'not null' => TRUE,
+    'default' => 0x01, // ENTITY_CUSTOM
+    'size' => 'tiny',
+  ));
+  db_add_field('simple_field', 'module', array(
+    'type' => 'varchar',
+    'length' => 255,
+    'not null' => FALSE,
+  ));
+
+  // Populate new field_name column using data from field_id.
+  $ids = db_select('simple_field', 'sf')->fields('sf', array('id', 'field_id'))->execute()->fetchAllKeyed();
+  $fields = field_info_field_by_ids();
+  foreach ($ids as $id => $field_id) {
+    db_update('simple_field')->fields(array('field_name' => $fields[$field_id]['field_name']))->condition('id', $id)->execute();
+  }
+
+  db_change_field('simple_field', 'field_name', 'field_name', array(
+    'type' => 'varchar',
+    'length' => 32,
+    'not null' => TRUE,
+    // Removing 'default' setting
+  ));
+}

@@ -1,0 +1,862 @@
+<?php
+
+/**
+ * Implements hook_hook_info().
+ *
+ * Specifc a group for our custom hooks so it knows what file to check.
+ */
+function simple_field_hook_info() {
+  return array(
+    'simple_field_type_info' => array('group' => 'simple_field'),
+    'simple_field_type_form' => array('group' => 'simple_field'),
+  );
+}
+
+/**
+ * Implements hook_entity_info().
+ *
+ * Define entities for our simplified fields.
+ */
+function simple_field_entity_info() {
+  $entity_types = array();
+
+  $entity_types['simple_field'] = array(
+    'label' => t('Simple Field'),
+    'entity class' => 'SimpleFieldEntity',
+    'controller class' => 'SimpleFieldEntityController',
+    'features controller class' => 'SimpleFieldFeaturesController',
+    'base table' => 'simple_field',
+    'exportable' => TRUE,
+    'entity keys' => array(
+      'id' => 'id',
+      'name' => 'field_name',
+    ),
+    'label callback' => 'entity_class_label',
+    'uri callback' => 'entity_class_uri',
+    'module' => 'simple_field',
+    'access callback' => 'simple_field_entity_access',
+    'admin ui' => array(
+      'file' => 'simple_field.admin.inc',
+      'path' => 'admin/structure/simple-field',
+    ),
+  );
+
+  return $entity_types;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function simple_field_permission() {
+  $perms = array(
+    'administer simple fields' => array(
+      'title' => t('Administer simple fields'),
+    ),
+    'view simple fields' => array(
+      'title' => t('View/List simple fields'),
+    ),
+    'create simple fields' => array(
+      'title' => t('Create simple fields'),
+    ),
+    'update simple fields' => array(
+      'title' => t('Edit simple fields'),
+    ),
+    'delete simple fields' => array(
+      'title' => t('Delete simple fields'),
+    ),
+    'create simple field instances' => array(
+      'title' => t('Create simple field instances'),
+    ),
+    'delete simple field instances' => array(
+      'title' => t('Delete simple field instances'),
+    ),
+    'list simple field instances' => array(
+      'title' => t('List simple field instances'),
+    ),
+    'create all simple field types' => array(
+      'title' => t('Create all simple field types'),
+    ),
+    'update all simple field types' => array(
+      'title' => t('Update all simple field types'),
+    ),
+    'delete all simple field types' => array(
+      'title' => t('Delete all simple field types'),
+    ),
+  );
+
+  foreach (simple_field_type_info() as $name => $info) {
+    $perms['create simple fields with type ' . $name] = array(
+      'title' => t('Create simple field with %type', array('%type' => $info['label'])),
+    );
+    $perms['update simple fields with type ' . $name] = array(
+      'title' => t('Update simple field with %type', array('%type' => $info['label'])),
+    );
+    $perms['delete simple fields with type ' . $name] = array(
+      'title' => t('Delete simple field with %type', array('%type' => $info['label'])),
+    );
+  }
+
+    /**
+     * These permissions are visible depending on types that are enabled, which
+     * means that people might have the permissions and technically not be
+     * allowed to access the bundle because they don't have the 'all' permission
+     * or because they types for this permission is disabled.
+     *
+     * To avoid this weirdness, don't use these permissions directly. Only use
+     * them indirectly via 'simple_field_enabled'.
+     */
+  foreach (entity_get_info() as $entity_type => $entity_info) {
+    if (empty($entity_info['fieldable'])) continue;
+
+    $type_perms = array();
+    $type_perms['administer simple fields for entity ' . $entity_type] = array(
+      'title' => t('Administer Simple Fields for Entity Type %type', array('%type' => $entity_info['label'])),
+    );
+    if (!variable_get('simple_field_all_enabled_' . $entity_type, FALSE)) {
+      foreach ($entity_info['bundles'] as $bundle => $bundle_info) {
+        if (!variable_get('simple_field_enabled_' . $entity_type . '_' . $bundle, FALSE)) {
+          continue;
+        }
+        $type_perms['administer simple fields for entity ' . $entity_type . ' bundle ' . $bundle] = array(
+          'title' => t('Administer Simple Fields for Entity Type %type bundle %bundle', array(
+            '%type' => $entity_info['label'],
+            '%bundle' => $bundle_info['label'],
+          )),
+        );
+      }
+
+      if (count($type_perms) > 1) {
+        // In none of the bundles are enabled, showing the permissio for
+        // administering the entity type is useless.
+        $perms += $type_perms;
+      }
+    }
+    else {
+      $perms += $type_perms;
+    }
+  }
+
+  return $perms;
+}
+
+/**
+ * Implements hook_menu().
+ */
+function simple_field_menu() {
+  $items = array();
+
+  $items['admin/structure/simple-field/settings'] = array(
+    'type' => MENU_LOCAL_TASK,
+    'title' => 'Settings',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('simple_field_admin_settings_form'),
+    'access arguments' => array('administer simple fields'),
+    'file' => 'simple_field.admin.inc',
+  );
+
+  $items['admin/structure/simple-field/choose-type'] = array(
+    'type' => MENU_LOCAL_ACTION,
+    'title' => 'Create a new Field',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('simple_field_type_select_form'),
+    'access callback' => 'simple_field_access',
+    'access arguments' => array('create', NULL),
+    'file' => 'simple_field.admin.inc',
+  );
+  $items['admin/structure/simple-field/add/%simple_field_type'] = array(
+    'type' => MENU_NORMAL_ITEM,
+    'title' => 'Create a new Field',
+    'page callback' => 'simple_field_add_page',
+    'page arguments' => array(4),
+    'access callback' => 'simple_field_access',
+    'access arguments' => array('create', 4),
+    'file' => 'simple_field.admin.inc',
+  );
+  $items['admin/structure/simple-field/%simple_field'] = array(
+    'type' => MENU_NORMAL_ITEM,
+    'title callback' => 'simple_field_page_title',
+    'title arguments' => array(3),
+    'page callback' => 'simple_field_view',
+    'page arguments' => array(3),
+    'access callback' => 'simple_field_access',
+    'access arguments' => array('view', 3),
+    'file' => 'simple_field.admin.inc',
+  );
+
+  // Build menu items for all bundles.
+  foreach (simple_field_bundle_info() as $info) {
+    $items += simple_field_menu_items($info);
+  }
+
+  return $items;
+}
+
+function simple_field_bundle_info() {
+  $bundles = array();
+  foreach (entity_get_info() as $entity_type => $entity_info) {
+    if ($entity_info['fieldable']) {
+      foreach ($entity_info['bundles'] as $bundle_name => $bundle_info) {
+        if (isset($bundle_info['admin'])) {
+          // Extract path information from the bundle.
+          $path = $bundle_info['admin']['path'];
+          if (isset($bundle_info['admin']['bundle argument'])) {
+            $bundle_arg = $bundle_info['admin']['bundle argument'];
+            $bundle_pos = (string) $bundle_arg;
+          }
+          else {
+            $bundle_arg = $bundle_name;
+            $bundle_pos = '0';
+          }
+          //$items += simple_field_menu_items($entity_type, $bundle_info, $bundle_name);
+          $bundles[] = array(
+            'entity_type' => $entity_type,
+            'bundle' => $bundle_name,
+            'bundle_info' => $bundle_info,
+            'bundle_arg' => $bundle_arg,
+            'bundle_pos' => $bundle_pos,
+            'admin_path' => $path,
+          );
+        }
+      }
+    }
+  }
+
+  return $bundles;
+}
+
+function simple_field_enabled($entity_type, $bundle, $account = NULL) {
+  if (!variable_get('simple_field_all_enabled_' . $entity_type, FALSE) &&
+      !variable_get('simple_field_enabled_' . $entity_type . '_' . $bundle, FALSE)) {
+    return FALSE;
+  }
+
+  return user_access('administer simple fields', $account) ||
+         user_access('administer simple fields for entity ' . $entity_type, $account) ||
+         user_access('administer simple fields for entity ' . $entity_type . ' bundle ' . $bundle, $account);
+}
+
+/**
+ * Build menu items for a given entity type and bundle
+ */
+function simple_field_menu_items($info) {
+  $entity_type = $info['entity_type'];
+  $bundle_info = $info['bundle_info'];
+  $path = $info['admin_path'];
+  $bundle_arg = $info['bundle_arg'];
+  $bundle_pos = $info['bundle_pos'];
+
+  $field_position = count(explode('/', $path));
+
+  $items = array();
+
+  $items[$path . '/simple-fields'] = array(
+    'type' => MENU_LOCAL_TASK,
+    'title' => 'Manage simple fields',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('simple_field_instance_overview_form', $entity_type, $bundle_arg),
+    'access callback' => 'simple_field_access',
+    'access arguments' => array('instance-list', NULL, $entity_type, $bundle_arg),
+    'file' => 'simple_field.admin.inc',
+  );
+  $items[$path . '/simple-fields/choose-type'] = array(
+    'type' => MENU_LOCAL_ACTION,
+    'title' => 'Create a new Field',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('simple_field_add_with_instance_type_select_form', $entity_type, $bundle_arg),
+    'access callback' => 'simple_field_access',
+    'access arguments' => array('create', NULL, $entity_type, $bundle_arg),
+    'file' => 'simple_field.admin.inc',
+  );
+  $items[$path . '/simple-fields/add/%simple_field_type'] = array(
+    'type' => MENU_NORMAL_ITEM,
+    'title' => 'Create a new Field',
+    'page callback' => 'simple_field_add_with_instance_page',
+    'page arguments' => array($entity_type, $bundle_arg, $field_position + 2),
+    'access callback' => 'simple_field_access',
+    'access arguments' => array('create', $field_position+2, $entity_type, $bundle_arg),
+    'file' => 'simple_field.admin.inc',
+  );
+
+  $items[$path . '/simple-fields/instance-add'] = array(
+    'type' => MENU_LOCAL_ACTION,
+    'title' => 'Add an existing Field',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('simple_field_instance_add_form', $entity_type, $bundle_arg),
+    'access callback' => 'simple_field_access',
+    'access arguments' => array('instance-list', NULL, $entity_type, $bundle_arg),
+    'file' => 'simple_field.admin.inc',
+  );
+  $items[$path . '/simple-fields/instance-add/%simple_field'] = array(
+    'type' => MENU_CALLBACK,
+    'page callback' => 'simple_field_instance_add_callback',
+    'page arguments' => array($entity_type, $bundle_arg, $field_position + 2),
+    'access callback' => 'simple_field_access',
+    'access arguments' => array('instance-create', $field_position + 2, $entity_type, $bundle_arg),
+    'file' => 'simple_field.admin.inc',
+  );
+  $items[$path . '/simple-fields/instance-remove/%simple_field'] = array(
+    'type' => MENU_CALLBACK,
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('simple_field_instance_delete_form', $entity_type, $bundle_arg, $field_position + 2),
+    'access callback' => 'simple_field_access',
+    'access arguments' => array('instance-delete', $field_position + 2, $entity_type, $bundle_arg),
+    'file' => 'simple_field.admin.inc',
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_menu_alter().
+ */
+function simple_field_menu_alter(&$items) {
+  // Remove the standard add handler provided by entity module.
+  unset($items['admin/structure/simple-field/add']);
+
+  if (module_exists('comment')) {
+    $items['admin/structure/types/manage/%comment_node_type/comment/simple-fields']['title'] = 'Comment Simple fields';
+    $items['admin/structure/types/manage/%comment_node_type/comment/simple-fields']['weight'] = 1;
+  }
+}
+
+/**
+ * Implements hook_theme().
+ */
+function simple_field_theme() {
+  return array(
+    'simple_field_instance_overview_form' => array(
+      'render element' => 'form',
+      'file' => 'simple_field.admin.inc',
+    ),
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Set of hooks used to maintain data integrity.
+
+/**
+ * Implements hook_field_update_field().
+ */
+function simple_field_field_update_field($field, $prior_field, $has_data) {
+  module_load_include('inc', 'simple_field');
+  _simple_field_field_update_field($field, $prior_field, $has_data);
+}
+
+/**
+ * Implements hook_field_delete_field().
+ */
+function simple_field_field_delete_field($field) {
+  module_load_include('inc', 'simple_field');
+  _simple_field_field_delete_field($field);
+}
+
+/**
+ * Implements hook_field_update_instance().
+ */
+function simple_field_field_update_instance($instance, $prior_instance) {
+  module_load_include('inc', 'simple_field');
+  _simple_field_field_update_instance($instance, $prior_instance);
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ *
+ * Disable the field_ui module's widget change form for fields managed by
+ * simple_field in order to preserve data integrity.
+ */
+function simple_field_form_field_ui_widget_type_form_alter(&$form, &$form_state) {
+  $field = field_info_field($form['#field_name']);
+  $simplefield = simple_field_load_by_field($field['id']);
+
+  if ($simplefield) {
+    $form['#disabled'] = TRUE;
+  }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function simple_field_form_field_ui_field_overview_form_alter(&$form, &$form_state) {
+
+  $entity_type = $form['#entity_type'];
+  $bundle = $form['#bundle'];
+
+  if (!simple_field_enabled($entity_type, $bundle)) return;
+
+  $simplefields = simple_field_entity_fields($entity_type, $bundle);
+
+  $form['#attached']['js'][] = drupal_get_path('module', 'simple_field') . '/simple_field.js';
+  $form['fields']['simple_fields']['#attributes']['class'] = array('simple-field-root', 'draggable', 'tabledrag-root');// removes tabledrag-leaf and add 'root'
+
+  foreach ($simplefields as $simplefield) {
+    $field = $simplefield->getField();
+    $form['fields'][$field['field_name']]['#simple_field'] = $simplefield;
+    $form['fields'][$field['field_name']]['#attributes']['class'][] = 'simple-field-row';
+
+    $parent = &$form['fields'][$field['field_name']]['parent_wrapper']['parent'];
+
+    $parent['#options'] = array('simple_fields' => t('Simple Fields'));
+    $parent['#default_value'] = 'simple_fields';
+  }
+
+  $form['#validate'][] = 'simple_field_field_overview_form_validate';
+}
+
+/**
+ * Validation handler for field UI field overview form.
+ *
+ * Processes the weights of simple fields and resets their weights to keep the
+ * same order, but be values between the simple field placeholder, and the next
+ * element. It does this by assuming that the element after the fields will be
+ * an integer grater than the placeholder.
+ */
+function simple_field_field_overview_form_validate(&$form, &$form_state) {
+
+  $base = $form_state['values']['fields']['simple_fields']['weight'];
+
+  $values = array();
+  foreach (element_children($form['fields']) as $key) {
+    $el = &$form['fields'][$key];
+
+    if (isset($el['#simple_field'])) {
+      $exists = FALSE;
+      $value = drupal_array_get_nested_value($form_state['values'], $el['#parents'], $exists);
+      if ($exists) {
+        $values[$key] = $value;
+      }
+    }
+  }
+
+  uasort($values, 'drupal_sort_weight');
+
+  $max = count($values);
+  $max = floor($max/10 + 1) * 10;
+  $i = 1;
+  foreach ($values as $key => $value) {
+    form_set_value($form['fields'][$key]['weight'], $base + $i/$max, $form_state);
+    $i++;
+  }
+}
+
+/**
+ * Implements hook_field_extra_fields().
+ */
+function simple_field_field_extra_fields() {
+  $extras = array();
+  foreach (simple_field_bundle_info() as $info) {
+    $entity_type = $info['entity_type'];
+    $bundle = $info['bundle'];
+
+    if (simple_field_enabled($entity_type, $bundle)) {
+      $extras[$entity_type][$bundle]['form']['simple_fields'] = array(
+        'label' => t('Simple Fields'),
+        'description' => t('Fields managed by simple fields'),
+        'weight' => 5,
+      );
+    }
+  }
+  return $extras;
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function simple_field_form_node_type_form_alter(&$form, &$form_state) {
+  $form['simple_field'] = array(
+    '#group' => 'additional_settings',
+    '#type' => 'fieldset',
+    '#title' => t('Simple Field'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+    'simple_field_enabled_node' => array(
+      '#type' => 'checkbox',
+      '#title' => t('Enabled for Nodes'),
+      '#default_value' => empty($form['#node_type']->type) ? FALSE : variable_get('simple_field_enabled_node_' . $form['#node_type']->type, FALSE),
+    ),
+    'simple_field_enabled_comment_comment_node' => array(
+      '#type' => 'checkbox',
+      '#title' => t('Enabled for Comments'),
+      '#default_value' => empty($form['#node_type']->type) ? FALSE : variable_get('simple_field_enabled_comment_comment_node_' . $form['#node_type']->type, FALSE),
+    ),
+  );
+}
+
+/**
+ * Implements hook_views_data_alter().
+ */
+function simple_field_views_data_alter(&$data) {
+  $data['simple_field']['edit_link'] = array(
+    'title' => 'Simple Field edit link',
+    'help' => 'Edit link for a Simple Field',
+    'field' => array(
+      'handler' => 'simple_field_handler_field_operation_link',
+      'simplefield_op' => 'edit',
+    ),
+  );
+  $data['simple_field']['delete_link'] = array(
+    'title' => 'Simple Field delete link',
+    'help' => 'Delete link for a Simple Field',
+    'field' => array(
+      'handler' => 'simple_field_handler_field_operation_link',
+      'simplefield_op' => 'delete',
+    ),
+  );
+  $data['simple_field']['clone_link'] = array(
+    'title' => 'Simple Field clone link',
+    'help' => 'Clone link for a Simple Field',
+    'field' => array(
+      'handler' => 'simple_field_handler_field_operation_link',
+      'simplefield_op' => 'clone',
+    ),
+  );
+  $data['simple_field']['type_label'] = array(
+    'title' => t('Type label'),
+    'help' => t('The Simple Field type label (Short Answer, Yes/No, etc.)'),
+    'real field' => 'type',
+    'field' => array(
+      'real field' => 'type',
+      'handler' => 'simple_field_handler_field_simplefield_type',
+    ),
+    'filter' => array(
+      'real field' => 'type',
+      'handler' => 'simple_field_handler_filter_simplefield_type',
+    ),
+  );
+  $data['simple_field']['label'] = array(
+    'title' => t('Label'),
+    'help' => t('The Simple Field label'),
+    'field' => array(
+      'handler' => 'simple_field_handler_field_simplefield_label',
+    ),
+  );
+}
+
+
+// ----------------------------------------------------------------------------
+// Entity API module functions.
+
+/**
+ * SimpleField load function.
+ *
+ * Menu loading function for simple_field entities.
+ *
+ * @param $id
+ *   The of the simple_field entity to load.
+ *
+ * @return
+ *   The simple_field entity or FALSE.
+ */
+function simple_field_load($id) {
+  if ($entities = entity_load('simple_field', array($id))) {
+    return current($entities);
+  }
+  return FALSE;
+}
+
+/**
+ * SimpleField load function to load by field.
+ *
+ * Looks of a simple_field entity based on its core field_id.
+ *
+ * @param $field_id
+ *   The numeric id of the field.
+ *
+ * @return
+ *   The simple_field entity of FALSE.
+ */
+function simple_field_load_by_field($field_id) {
+  $query = new EntityFieldQuery();
+  $result = $query
+    ->entityCondition('entity_type', 'simple_field')
+    ->propertyCondition('field_id', $field_id)
+    ->execute();
+
+  if (!empty($result['simple_field'])) {
+    return simple_field_load(key($result['simple_field']));
+  }
+  return FALSE;
+}
+
+/**
+ * SimpleField save function.
+ *
+ * Helper to trigger saving of a given simplefield entity.
+ */
+function simple_field_save($simplefield) {
+  return entity_save('simple_field', $simplefield);
+}
+
+/**
+ *
+ *
+ * @param $op
+ *   'create', 'update', 'delete', 'view'
+ *   'instance-create', 'instance-delete', 'instance-list'
+ * @param $entity
+ *   The simple field entity, or the simple field type name if 'create', or NULL
+ *   if create with type unknown, or NULL for instance-list.
+ * @param $entity_type / $bundle
+ *   The entity type and bundle that the field is being added to. Only really
+ *   useful for op 'add'.
+ * @param $account
+ *   The user account object to check for access.
+ *
+ */
+function simple_field_access($op, $entity, $entity_type = NULL, $bundle = NULL, $account = NULL) {
+
+  // Check using standard entity_access
+  if (in_array($op, array('update', 'delete', 'view')) && !entity_access($op, 'simple_field', $entity, $account)) {
+    return FALSE;
+  }
+  elseif ($op == 'create') {
+    if (!entity_access($op, 'simple_field', 'simple_field', $account)) {
+      return FALSE;
+    }
+    // Have to check this here because type is not available in entity_access
+    // 'create' op.
+    if ($entity && !simple_field_type_access($op, $entity, $account)) {
+      return FALSE;
+    }
+  }
+
+
+  if (in_array($op, array('instance-create', 'instance-delete', 'instance-list')) &&
+      !simple_field_instance_access($op, $entity, $account)) {
+    return FALSE;
+  }
+
+  // Check that adding an instance to this bundle is allowed.
+  if ($entity_type && $bundle) {
+    $bundle = field_extract_bundle($entity_type, $bundle);
+    if (!simple_field_enabled($entity_type, $bundle)) {
+      return FALSE;
+    }
+  }
+
+  return TRUE;
+}
+
+/**
+ * SimpleField access function.
+ *
+ * Access callback for entity module's entity_access function.
+ *
+ * @param $op
+ *   The operation being performed. (view, create, update, delete).
+ * @param $entity
+ *   The simple_field entity.
+ * @param $account
+ *   The account to use in access checking. Leave NULL to check global $user.
+ *
+ * @return
+ *   TRUE or FALSE for access to given op and entity.
+ */
+function simple_field_entity_access($op, $entity, $account, $entity_type) {
+  if (in_array($op, array('update', 'delete')) && !simple_field_type_access($op, $entity->getTypeInfo(), $account)) {
+    return FALSE;
+  }
+  if (user_access('administer simple fields', $account)) {
+    return TRUE;
+  }
+  switch ($op) {
+    case 'view':
+      return user_access('view simple fields', $account);
+    case 'create':
+      return user_access('create simple fields', $account);
+    case 'update':
+      return user_access('update simple fields', $account);
+    case 'delete':
+      return user_access('delete simple fields', $account);
+  }
+  return FALSE;
+
+}
+
+/**
+ * Check if the given type is available to this user.
+ *
+ * @param $op
+ *   The operation to access. One of 'create', 'edit', 'delete'.
+ * @param $type
+ *   The type machine name or type info array.
+ * @param $account
+ *   The account to check, or NULL to use current user.
+ *
+ * @return
+ *   Boolean indicating access granted or denied.
+ */
+function simple_field_type_access($op, $type, $account = NULL) {
+  if (!in_array($op, array('create', 'update', 'delete'))) {
+    return FALSE;
+  }
+  if (is_array($type)) {
+    $type = $type['type'];
+  }
+  return user_access('administer simple fields', $account) ||
+         user_access($op . ' all simple field types', $account) ||
+         user_access($op . ' simple fields with type ' . $type, $account);
+
+}
+
+/**
+ * Check access to instances.
+ */
+function simple_field_instance_access($op, $entity, $account = NULL) {
+  if (user_access('administer simple fields', $account)) {
+    return TRUE;
+  }
+
+  switch ($op) {
+    case 'instance-create':
+      return user_access('create simple field instances', $account);
+    case 'instance-delete':
+      return user_access('delete simple field instances', $account);
+    case 'instance-list':
+      return user_access('list simple field instances', $account);
+  }
+  return FALSE;
+}
+
+
+
+// ----------------------------------------------------------------------------
+// Helper functions for working with SimpleField types.
+
+/**
+ * Helper to get SimpleField type information.
+ *
+ * @param $type
+ *   The name of the type to query for info. Leave NULL for full list of types.
+ *
+ * @return
+ *   A single array with type info, or an array of type info arrays.
+ */
+function simple_field_type_info($type = NULL) {
+  $types = &drupal_static(__FUNCTION__, NULL);
+  if (!isset($types)) {
+    $types = array();
+    foreach (module_implements('simple_field_type_info') as $module) {
+      $hook = $module . '_simple_field_type_info';
+      $return = $hook();
+      foreach ($return as $key => &$val) {
+        $field_type = field_info_field_types($val['field']);
+
+        if (!$field_type) {
+          // Disable types when the field module is missing.
+          unset($return[$key]);
+          continue;
+        }
+
+        $val += array(
+          'module' => $module,
+          'type' => $key,
+          'label' => $key,
+          'help' => '',
+          'defaults' => array(),
+          'cardinality' => FIELD_CARDINALITY_UNLIMITED,
+          'formatter' => $field_type['default_formatter'],
+          'widget' => $field_type['default_widget'],
+        );
+
+        foreach (array('field', 'instance', 'widget', 'formatter') as $setting) {
+          $setting_type = $setting . '_settings';
+          if ($setting == 'instance') {
+            $setting = 'field';
+          }
+          $func = 'field_info_' . $setting . '_settings';
+          $val['defaults'] += array($setting_type => array());
+          $val['defaults'][$setting_type] += function_exists($func) ? $func($val[$setting]) : array();
+        }
+      }
+      $types += $return;
+    }
+    drupal_alter('simple_field_type_info', $types);
+
+    foreach ($types as $name => $type_info) {
+      if (!field_info_field_types($type_info['field']) || !field_info_widget_types($type_info['widget'])) {
+        unset($types[$name]);
+      }
+    }
+  }
+
+  if (isset($type)) {
+    return isset($types[$type]) ? $types[$type] : FALSE;
+  }
+  return $types;
+}
+
+/**
+ * Helper to get extra SimpleField specific form fields.
+ *
+ * @param $simplefield
+ *   The simple_field entity object.
+ *
+ * @return
+ *   The form elements to be added to the field form. Should be keyed on
+ *   settings type (field, instance, widget) with form_state values mapping
+ *   directly to settings in $field and $instance.
+ */
+function simple_field_type_form($simplefield) {
+
+  $type_info = $simplefield->getTypeInfo();
+
+  $form = module_invoke($type_info['module'], 'simple_field_type_form', $simplefield, $simplefield->hasData());
+  return $form ? $form : array();
+}
+
+/**
+ * Helper for menu loading of types.
+ *
+ * Aliad for simple_field_type_info for menu loading so that menu items can use
+ * the %simple_field_type menu object.
+ *
+ * @param $type
+ *   The name of the type to load.
+ */
+function simple_field_type_load($type) {
+  return simple_field_type_info($type);
+}
+
+
+// ----------------------------------------------------------------------------
+// Functions for querying simple fields and instances.
+
+/**
+ * Get an list of all simple_fields for a bundle.
+ *
+ * @param $entity_type
+ *   The entity type of the entity with the fields.
+ * @param $bundle
+ *   The identifier for the entity's bundle.
+ *
+ * @return
+ *   An array of simple_field entities.
+ */
+function simple_field_entity_fields($entity_type, $bundle) {
+
+  $instances = field_info_instances($entity_type, $bundle);
+
+  $field_ids = array();
+  foreach ($instances as $instance) {
+    $field = field_info_field($instance['field_name']);
+    $field_ids[] = $field['id'];
+  }
+
+  $ids = array();
+  if ($field_ids) {
+    $ids = db_select('simple_field', 'sf')
+      ->fields('sf', array('id'))
+      ->condition('field_id', $field_ids)
+      ->execute()
+      ->fetchCol();
+  }
+
+  return $ids ? entity_load('simple_field', $ids) : array();
+}
+
+/**
+ * Title callback for entity view page.
+ */
+function simple_field_page_title($simplefield) {
+  return $simplefield->label();
+}

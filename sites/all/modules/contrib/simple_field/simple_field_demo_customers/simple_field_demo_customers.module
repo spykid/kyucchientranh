@@ -1,0 +1,7 @@
+<?php
+/**
+ * @file
+ * Code for the Simple Field Demo Customers feature.
+ */
+
+include_once('simple_field_demo_customers.features.inc');

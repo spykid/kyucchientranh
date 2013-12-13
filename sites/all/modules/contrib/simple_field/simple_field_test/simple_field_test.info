@@ -1,0 +1,17 @@
+name=Simple Fields Test
+description="Provides code for testing views handlers, APIs, etc."
+core=7.x
+dependencies[]=field
+dependencies[]=entity
+dependencies[]=simple_field
+files[]=simple_field_test.module
+files[]=simple_field_test.views_default.inc
+features[views_view][]=simple_field_test_view
+features[ctools][] = "views:views_default:3.0"
+
+; Information added by drupal.org packaging script on 2013-05-25
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "simple_field"
+datestamp = "1369453776"
+

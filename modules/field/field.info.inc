@@ -384,6 +384,7 @@ function _field_info_prepare_instance_widget($field, $widget) {
     $widget['type'] = $field_type['default_widget'];
     $widget_type = field_info_widget_types($widget['type']);
   }
+  dpm($widget_type['module']);
   $widget['module'] = $widget_type['module'];
   // Fill in default settings for the widget.
   $widget['settings'] += field_info_widget_settings($widget['type']);

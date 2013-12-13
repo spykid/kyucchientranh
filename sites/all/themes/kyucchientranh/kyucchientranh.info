@@ -9,21 +9,22 @@ core = 7.x
 stylesheets[all][] = css/style.css
 stylesheets[all][] = css/coin-slider.css
 stylesheets[all][] = css/override.css
+stylesheets[all][] = mycolorbox/mycolorbox.css
 
-scripts[] = js/cufon-yui.js
-scripts[] = js/js/cufon-times.js
-scripts[] = js/jquery-1.4.2.min.js
-scripts[] = js/script.js
-scripts[] = js/coin-slider.min.js
 
+scripts[] = mycolorbox/mycolorbox.js
 regions[header] = Header
 regions[highlighted] = Highlighted
 regions[fbg] = Page bottom
 
+regions[fcolumn1] = Footer First Column
+regions[fcolumn2] = Footer Second Column
+regions[fcolumn3] = Footer Third Column
+
 regions[highlighted] = Highlighted
 regions[content] = Content
 regions[footer] = Footer
-regions[sidebar_left] = Sidebar second
+regions[sidebar] = Sidebar
 
 settings[shortcut_module_link] = 0
 

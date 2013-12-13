@@ -1,0 +1,13 @@
+name = "Simple Field Modal UI"
+description = "Provide a nice modal UI for Simple Fields using Ctools modals"
+core=7.x
+package="Simple Field"
+dependencies[]=simple_field
+dependencies[]=ctools
+
+; Information added by drupal.org packaging script on 2013-05-25
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "simple_field"
+datestamp = "1369453776"
+

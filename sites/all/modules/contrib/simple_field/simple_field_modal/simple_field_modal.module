@@ -1,0 +1,156 @@
+<?php
+
+require 'simple_field_modal.pages.inc';
+
+/**
+ * Implements hook_menu_alter().
+ *
+ * Alters the default simple_field pages to use a callback that wraps page
+ * output in the proper ajax commands for modals.
+ */
+function simple_field_modal_menu_alter(&$items) {
+  $paths = array(
+    'admin/structure/simple-field/choose-type',
+    'admin/structure/simple-field/add/%simple_field_type',
+    'admin/structure/simple-field/%simple_field',
+    'admin/structure/simple-field/manage/%entity_object',
+    'admin/structure/simple-field/manage/%entity_object/edit',
+    'admin/structure/simple-field/manage/%entity_object/clone',
+  );
+
+  $bundle_info = simple_field_bundle_info();
+  foreach ($bundle_info as $info) {
+    $paths[] = $info['admin_path'] . '/simple-fields/instance-add';
+    $paths[] = $info['admin_path'] . '/simple-fields/choose-type';
+    $paths[] = $info['admin_path'] . '/simple-fields/add/%simple_field_type';
+  }
+
+  // Filter duplicates introduced by bundles.
+  $paths = array_unique($paths);
+
+  // For each path, add a '/nojs' and '/ajax' child path.
+  foreach ($paths as $path) {
+    $item = $items[$path];
+
+    if (isset($item['type']) && $item['type'] == MENU_DEFAULT_LOCAL_TASK) {
+      $parts = explode('/', $path);
+      array_pop($parts);
+      $item = $items[implode('/', $parts)];
+    }
+
+    $items[$path . '/nojs'] = $item;
+
+    $args = isset($item['page arguments']) ? $item['page arguments'] : array();
+    $args = array_merge(array($item['page callback']), $args);
+    $items[$path . '/ajax'] = array(
+      'page callback' => 'simple_field_modal_page',
+      'page arguments' => $args,
+      'access callback' => isset($item['access callback']) ? $item['access callback'] : NULL,
+      'access arguments' => isset($item['access arguments']) ? $item['access arguments'] : NULL,
+      'delivery callback' => 'ajax_deliver',
+      'type' => MENU_NORMAL_ITEM,
+    ) + $item;
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Hooks to rewrite output of simple_field to use modal windows.
+
+/**
+ * Implements hook_preprocess_menu_local_action().
+ *
+ * Modifies type selection and field/instance adding pages to use modal popups,
+ * and adds js files so that they will behave properly.
+ */
+function simple_field_modal_preprocess_menu_local_action(&$variables) {
+  $link = &$variables['element']['#link'];
+  if ($link['path'] == 'admin/structure/simple-field/choose-type' ||
+      preg_match('/\/simple-fields\/(instance-add|choose-type)$/', $link['path'])) {
+    $link['href'] .= '/nojs';
+    $link['localized_options']['attributes']['class'][] = 'ctools-use-modal';
+
+    simple_field_modal_add_js();
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function simple_field_modal_form_alter(&$form, &$form_state, $form_id) {
+  if ($form_id == 'simple_field_overview_form') {
+
+    // Add JS so in-page links will work properly.
+    $form['#pre_render'][] = 'simple_field_modal_add_js';
+
+    // Check all rows for links that need to be fixed.
+    foreach ($form['table']['#rows'] as &$row) {
+      $url = &$row[0]['data']['#url'];
+      $url['path'] .= '/nojs';
+      $url['options']['attributes']['class'][] = 'ctools-use-modal';
+
+      foreach ($row as &$cell) {
+        $matches = NULL;
+        if (is_string($cell)) {
+          // TODO This is a bad way to do this.
+          $cell = preg_replace_callback('/(<a.*?)(href=".*?manage\/[0-9]+)(.*?)(".*?>(edit|clone)<\/a>)/', '_simple_field_modal_link_replace_callback', $cell);
+        }
+      }
+    }
+  }
+  elseif ($form_id == 'simple_field_form') {
+    // Save a reference to form_state because we need the for ajax form
+    // processing in simple_field_modal_page.
+    $form['#simple_field_form_state'] = &$form_state;
+  }
+  elseif (!empty($form_state['ajax']) && in_array($form_id, array('simple_field_type_select_form', 'simple_field_add_with_instance_type_select_form'))) {
+    // Add a special submit handler so that redirection can occurs properly.
+    $form['#submit'][] = 'simple_field_modal_type_redirect_submit';
+  }
+}
+
+/**
+ * preg_replace_callback function to add modal classes and /nojs suffix.
+ */
+function _simple_field_modal_link_replace_callback(&$matches) {
+  return $matches[1] . 'class="ctools-use-modal" ' . $matches[2] . $matches[3] . '/nojs' . $matches[4];
+}
+
+/**
+ * Special submit handler, which will run after the standard handler, which will
+ * render the next step in the field creation, rather than trying to redirect.
+ */
+function simple_field_modal_type_redirect_submit(&$form, &$form_state) {
+
+  if (!empty($form_state['ajax']) && !empty($form_state['redirect'])) {
+    // Save POST so it doesn't interfere with form rendering.
+    $post = $_POST;
+    $_POST = array();
+
+    // Render the next step of this form, and save it's commands.
+    $path = array_shift($form_state['redirect']) . '/ajax';
+    $output = menu_execute_active_handler($path, FALSE);
+    $form_state['simple_field_modal_commands'] = $output['#commands'];
+
+    // Restore the post values.
+    $_POST = $post;
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Helper functions
+
+/**
+ * Helper to load the modal JS files.
+ *
+ * Usable as both a function and as a pre_render function.
+ */
+function simple_field_modal_add_js($element = NULL) {
+  ctools_include('modal');
+  // Add for modal popup js files.
+  ctools_modal_add_js();
+
+  // Add for 'reload' ajax command.
+  ctools_add_js('ajax-responder');
+  return $element;
+}
+

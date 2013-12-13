@@ -1,0 +1,247 @@
+<?php
+
+/**
+ * @file
+ * Tests for Simple Field module.
+ */
+
+/**
+ * Base class for simple field module tests.
+ */
+abstract class SimpleFieldTestCase extends DrupalWebTestCase {
+
+  protected $current_user;
+  protected $admin_user;
+
+  function setUp() {
+    $args = func_get_args();
+    $parent_args = array_merge($args, array('simple_field', 'simple_field_test'));
+    call_user_func_array(array('parent', 'setUp'), $parent_args);
+    $this->make_user();
+  }
+
+  function make_user() {
+    $this->admin_user = $this->drupalCreateUser(array(
+      'access administration pages',
+      'administer site configuration',
+      'administer simple fields',
+      'administer content types',
+      'bypass node access',
+    ));
+    $this->drupalLogin($this->admin_user);
+  }
+
+  function createSimpleField($type) {
+    $this->drupalGet('admin/structure/simple-field/choose-type');
+    $selection = array(
+      'type' => $type,
+    );
+    $this->drupalPost(NULL, $selection, t('Next'));
+    $simple_field_name = $this->randomName();
+    $help_text = $this->randomString();
+    $edit = array(
+      'label' => $simple_field_name,
+      'instance_settings[description]' => $help_text,
+    );
+    $this->drupalPost(NULL, $edit, t('Save'));
+    $this->assertText($simple_field_name, "Simple Field label '$simple_field_name' created");
+
+    $result = db_query("SELECT id,field_settings FROM {simple_field} ORDER BY id DESC")->fetchAll();
+    $simplefield = simple_field_load(intval(current($result)->id));
+
+
+    $this->assertEqual($simplefield->label(), $simple_field_name, 'The simple field was created: ' . $simplefield->label());
+
+    return $simplefield;
+  }
+
+  function createContentType() {
+    $content_type_machine = drupal_strtolower($this->randomName(10));
+
+    $this->drupalGet('admin/structure/types');
+
+    // Create the content type.
+    $this->clickLink(t('Add content type'));
+
+    $edit = array(
+      'name' => $content_type_machine,
+      'type' => $content_type_machine,
+    );
+    $this->drupalPost(NULL, $edit, t('Save content type'));
+    $this->assertText(t('The content type @name has been added.', array('@name' => $content_type_machine)));
+
+    // Somehow clicking "save" isn't enough, and we have to do a
+    // node_types_rebuild().
+    node_types_rebuild();
+    menu_rebuild();
+    $type_exists = db_query('SELECT 1 FROM {node_type} WHERE type = :type', array(':type' => $content_type_machine))->fetchField();
+    $this->assertTrue($type_exists, 'The new content type has been created in the database.');
+
+
+    return $content_type_machine;
+  }
+
+  function addSimpleFieldToNewContentType($type) {
+    $simplefield = $this->createSimpleField($type);
+    $this->drupalGet("admin/structure/simple-field/{$simplefield->identifier()}/details");
+    $this->assertText($simplefield->label());
+    $content_type_machine = $this->createContentType();
+    $this->drupalGet("admin/structure/types/manage/$content_type_machine/simple-fields/instance-add");
+    $this->clickLink('Add this field');
+    $this->assertText(t('Field instance successfully added'));
+    $this->assertText($simplefield->label());
+    return array(
+      'simplefield' => $simplefield,
+      'content_type_machine' => $content_type_machine
+    );
+  }
+}
+
+class SimpleFieldBasicOperationsTestCase extends SimpleFieldTestCase {
+
+  public static function getInfo() {
+    return array(
+      'name' => 'Simple Field Basic Operations',
+      'description' => 'Test basic operations of the Simple Field module',
+      'group' => 'Simple Field',
+    );
+  }
+
+  function setUp() {
+    // TODO: This shouldn't be part of these tests, may just be able to remove
+    // it, but need to confirm.
+    parent::setUp('simple_field_modal');
+  }
+
+  function testSimpleFieldMenu() {
+    $this->drupalGet('admin/structure/simple-field');
+  }
+
+  function testCreate() {
+    $simplefield = $this->createSimpleField('simple_field_yesno');
+    $this->drupalGet("admin/structure/simple-field/{$simplefield->identifier()}/details");
+    $this->assertText($simplefield->label());
+  }
+
+  function testAddSimpleFieldToNewContentType() {
+    $this->addSimpleFieldToNewContentType('simple_field_yesno');
+  }
+
+  function testDeleteSimpleFieldFromNewContentType() {
+    $info = $this->addSimpleFieldToNewContentType('simple_field_yesno');
+    $simplefield = $info['simplefield'];
+    $content_type_machine = $info['content_type_machine'];
+    $this->drupalGet("admin/structure/types/manage/$content_type_machine/simple-fields");
+    $this->clickLink(t('delete'));
+    $this->assertText(t('Field instance successfully removed'));
+    $this->assertNoText($simplefield->label());
+  }
+
+  function testAddNodeWithSimpleField() {
+    $info = $this->addSimpleFieldToNewContentType('simple_field_yesno');
+    $content_type_machine = $info['content_type_machine'];
+    $simplefield = $info['simplefield'];
+    $this->drupalGet("node/add/$content_type_machine");
+    $this->assertText($simplefield->label(), t("The simple field's label is rendered correctly. Saving the node works."));
+    $edit = array(
+      'title' => $this->randomString(),
+      'body[und][0][value]' => $this->randomString(),
+      'sf_' . drupal_strtolower($simplefield->label()) . '[und]' => "1",
+    );
+    $this->drupalPost(NULL, $edit, t('Save'));
+    $this->assertText('Yes', t('The simple field renders its value correctly.'));
+
+    $current_url = $this->getUrl();
+    $edit_url = $current_url . '/edit';
+    $this->drupalGet($edit_url);
+    $edit = array(
+      'title' => $this->randomString(),
+      'body[und][0][value]' => $this->randomString(),
+      'sf_' . drupal_strtolower($simplefield->label()) . '[und]' => "0",
+    );
+    $this->drupalPost(NULL, $edit, t('Save'));
+    $this->assertText('No', t("The simple field's label is rendered correctly. Editing works."));
+
+    // get this url and add 'edit', and then, well, edit.
+  }
+}
+
+/**
+ * Test the simple_field views handlers.
+ *
+ * simple_field_test contains a default view that contains the views handlers. Make sure
+ * the correct data is displayed and that the handlers behave as expected.
+ */
+class SimpleFieldViewsHandlerTestCase extends SimpleFieldTestCase {
+
+  public static function getInfo() {
+    return array(
+      'name' => 'Simple Field Views Handlers',
+      'description' => 'Test views handlers of Simple Field',
+      'group' => 'Simple Field',
+    );
+  }
+
+  function setUp() {
+    parent::setUp('simple_field_test', 'views', 'views_ui');
+    // @TODO Figure out why it's required to clear the cache here.
+    views_module_include('views_default', TRUE);
+    views_get_all_views(TRUE);
+    menu_rebuild();
+    views_invalidate_cache();
+    menu_rebuild();
+  }
+
+  /**
+   * Test that the view (in simple_field_test.views_default.inc) shows the
+   * correct information and that the views handlers work correctly.
+   */
+  function testSimpleFieldView() {
+    // Create some simple fields and make sure they
+    // show up in the view.
+    $this->drupalGet("simplefieldtestview");
+    $simplefield1 = $this->createSimpleField('simple_field_yesno');
+    $this->drupalGet("simplefieldtestview");
+    $this->assertText($simplefield1->label(), 'The simple field with label ' . $simplefield1->label() . ' is in the view.');
+    $simplefield2 = $this->createSimpleField('simple_field_yesno');
+    $this->drupalGet("simplefieldtestview");
+    $this->assertText($simplefield2->label(), 'The simple field with label ' . $simplefield2->label() . ' is in the view.');
+
+    // Test display of simplefield types.
+    // TODO test with other types
+    $this->assertText('Yes/No');
+
+    // Delete the first simplefield with the simple_field_views_handler_field_operation_link.
+    $this->clickLink(t('Delete'));
+    $this->drupalPost(NULL, array('confirm' => 1), t('Confirm'));
+    $this->drupalGet("simplefieldtestview"); // So the drupal_set_message goes away
+    $this->assertNoText($simplefield1->label(), "The simple field with label ({$simplefield1->label()}) was deleted.");
+
+    // Edit the remaining simplefield with the simple_field_views_handler_field_operation_link.
+    $this->clickLink(t('Edit'));
+    $new_simple_field_name = $this->randomName();
+    $edit = array(
+      'label' => $new_simple_field_name,
+      'instance_settings[description]' => $this->randomString(),
+    );
+    $this->drupalPost(NULL, $edit, t('Save'));
+    $this->drupalGet("simplefieldtestview");
+    $this->assertNoText($simplefield2->label(), 'Successfully edited the simple field using the edit link in the view; the old label is no longer present.');
+    $this->assertText($new_simple_field_name, 'Successfully edited the simple field using the edit link in the view; the new label is present.');
+
+    // Update the $simplefield2 entity instance
+    $result = entity_load('simple_field', array($simplefield2->id), array(), TRUE);
+    $simplefield2 = current($result);
+
+    // Clone the remaining simplefield with the simple_field_views_handler_field_operation_link.
+    $this->clickLink(t('Clone'));
+    $new_simple_field_name = $this->randomName();
+    $edit = array(
+      'label' => $new_simple_field_name,
+      'instance_settings[description]' => $this->randomString(),
+    );
+    $this->drupalPost(NULL, $edit, t('Save'));
+    $this->assertText($new_simple_field_name, "Simple field with new name ($new_simple_field_name) exists.");
+    $this->assertText($simplefield2->label(), "Old simple field ({$simplefield2->label()}) was retained; clone successful.");
+  }
+}

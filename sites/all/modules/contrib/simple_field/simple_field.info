@@ -1,0 +1,20 @@
+name=Simple Fields UI
+description="Provides a simplified UI for creating and adding fields to entities."
+core=7.x
+package = "Simple Field"
+configure = admin/structure/simple-field/settings
+dependencies[]=field
+dependencies[]=entity
+files[]=simple_field.inc
+files[]=simple_field.test
+files[]=views/handlers/simple_field_handler_field_operation_link.inc
+files[]=views/handlers/simple_field_handler_filter_simplefield_type.inc
+files[]=views/handlers/simple_field_handler_field_simplefield_type.inc
+files[]=views/handlers/simple_field_handler_field_simplefield_label.inc
+
+; Information added by drupal.org packaging script on 2013-05-25
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "simple_field"
+datestamp = "1369453776"
+

@@ -1,0 +1,36 @@
+<?php
+
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+function a_examples_menu() {
+   $items = array();
+   $items['settings'] = array(
+        'title' => t('Settings'),
+        'description' => t('Seting'),
+        'page callback' => 'a_option_settings_root',
+        'access callback' => true,
+    );
+    $items['settings/company'] = array(
+        'title' => t('Company'),
+        'description' => t('Settings for ticket system'),
+        'type' => MENU_DEFAULT_LOCAL_TASK,
+        'weight' => 0,
+    );
+    $items['settings/mail'] = array(
+      'title' => t('Mail'),
+      'description' => t('Settings for Ticket System'),
+      'access callback' => true,
+      'page callback' => 'a_option_settings_mail',
+      'type' => MENU_LOCAL_TASK,
+      'weight' => 2,
+    );
+    return $items;
+}
+
+function a_option_settings_mail() {
+    return 'page mail';
+}
+?>

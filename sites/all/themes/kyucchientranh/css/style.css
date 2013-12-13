@@ -151,11 +151,12 @@ h1 small {
 	padding:18px 0 32px;
 	width:960px;
 }
-.content .mainbar .content{
+
+.content .mainbar .article{
 	margin:0;
 	padding:12px 20px;
 	float:left;
-	width:640px;
+	width:700px;
 	background:#f4f4f4;
 }
 .content .mainbar .view-content h2 {
@@ -492,4 +493,7 @@ ol li .send {
 }
 a {
 	outline:none;
+}
+.content .content_resize .sidebar {
+  float: right;
 }
